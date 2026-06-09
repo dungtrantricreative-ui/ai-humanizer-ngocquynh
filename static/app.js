@@ -33,8 +33,6 @@ document.addEventListener('DOMContentLoaded', () => {
         charCount.textContent = inputText.value.length;
     });
 
-
-
     // ─── User message ────────────────────────────────────────────────────────
 
     function addUserMessage(text) {
@@ -70,15 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
         chatContainer.appendChild(el);
         scrollBottom();
 
-        // Return reference to the actual DOM node (not the clone's detached el)
         const domEl = chatContainer.lastElementChild;
         const domList    = domEl.querySelector('.steps-list');
         const domCountEl = domEl.querySelector('.steps-count');
         const domDoneEl  = domEl.querySelector('.steps-done-badge');
         const domChevron = domEl.querySelector('.steps-chevron');
-        const domToggle  = domEl.querySelector('.steps-toggle');
 
-        // Expand by default while processing
         domList.classList.remove('hidden');
         domChevron.classList.add('open');
 
@@ -108,7 +103,6 @@ document.addEventListener('DOMContentLoaded', () => {
         block.countEl.textContent = block.count;
         scrollBottom();
 
-        // return reference to the actual last step item
         return block.list.lastElementChild;
     }
 
@@ -125,7 +119,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function markStepsBlockDone(block) {
         block.doneEl.classList.remove('hidden');
         block.doneEl.classList.add('inline-flex');
-        // Collapse after done
         setTimeout(() => {
             block.list.classList.add('hidden');
             block.chevron.classList.remove('open');
@@ -180,8 +173,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ─── Step tracking map ───────────────────────────────────────────────────
-    // Map step_name -> { itemEl, iconEl } so we can update in-place
-
     let stepMap = {};
 
     // ─── Main humanize ────────────────────────────────────────────────────────
@@ -204,9 +195,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         isProcessing = true;
         humanizeBtn.disabled = true;
-        processingBadge.classList.add('active');
+        
+        // FIX UI BUG: Xóa class hidden để hiển thị thanh trạng thái xử lý dữ liệu
+        processingBadge.classList.remove('hidden');
 
-        // Create steps block
         currentStepsBlock = createStepsBlock();
         stepMap = {};
 
@@ -221,77 +213,96 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             isProcessing = false;
             humanizeBtn.disabled = false;
-            processingBadge.classList.remove('active');
+            
+            // FIX UI BUG: Thêm lại class hidden khi xử lý kết thúc
+            processingBadge.classList.add('hidden');
+            
             if (currentStepsBlock) markStepsBlockDone(currentStepsBlock);
         }
     }
 
+    // THAY THẾ TOÀN BỘ LOGIC EVENTSOURCE BẰNG FETCH POST STREAM
     async function streamHumanization(text, language) {
-        return new Promise((resolve, reject) => {
-            const url = `/humanize?text=${encodeURIComponent(text)}&language=${language}`;
-            const es  = new EventSource(url);
-
-            es.addEventListener('message', event => {
-                try {
-                    const data = JSON.parse(event.data);
-                    handleSSEEvent(data, es, resolve, reject);
-                } catch (e) {
-                    es.close();
-                    reject(e);
-                }
-            });
-
-            es.addEventListener('error', () => {
-                es.close();
-                reject(new Error('Kết nối bị mất'));
-            });
+        // Lưu ý quan trọng: Nếu trong file main.py của bạn include router có kèm `prefix="/api"`, 
+        // thì hãy đổi đường dẫn dưới đây thành '/api/humanize'
+        const response = await fetch('/humanize', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ text, language })
         });
-    }
 
-    function handleSSEEvent(data, es, resolve, reject) {
-        const block = currentStepsBlock;
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(errText || `Server Error: ${response.status}`);
+        }
 
-        if (data.status === 'info') {
-            addStepItem(block, 'running', 'Khởi tạo', data.message);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
 
-        } else if (data.status === 'step') {
-            // New step starts
-            const key = data.step_name;
-            if (!stepMap[key]) {
-                const itemEl  = addStepItem(block, 'running', data.step_name, data.message);
-                const iconEl  = itemEl.querySelector('.step-icon');
-                stepMap[key]  = { itemEl, iconEl };
-            } else {
-                // Update message
-                stepMap[key].itemEl.querySelector('.step-msg').textContent = data.message;
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            
+            // Giữ lại dòng dang dở cuối cùng vào bộ đệm buffer
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                const cleanedLine = line.trim();
+                if (!cleanedLine || !cleanedLine.startsWith('data: ')) continue;
+
+                const jsonStr = cleanedLine.substring(6); // Bỏ chuỗi "data: " để lấy JSON thuần
+                try {
+                    const data = JSON.parse(jsonStr);
+                    const block = currentStepsBlock;
+
+                    if (data.status === 'info') {
+                        addStepItem(block, 'running', 'Khởi tạo', data.message);
+
+                    } else if (data.status === 'step') {
+                        const key = data.step_name;
+                        if (!stepMap[key]) {
+                            const itemEl  = addStepItem(block, 'running', data.step_name, data.message);
+                            const iconEl  = itemEl.querySelector('.step-icon');
+                            stepMap[key]  = { itemEl, iconEl };
+                        } else {
+                            stepMap[key].itemEl.querySelector('.step-msg').textContent = data.message;
+                        }
+
+                    } else if (data.status === 'step_complete') {
+                        const key = data.step_name;
+                        if (stepMap[key]) {
+                            setStepIcon(stepMap[key].iconEl, 'done');
+                            stepMap[key].itemEl.querySelector('.step-msg').textContent = data.message;
+                        } else {
+                            addStepItem(block, 'done', data.step_name, data.message);
+                        }
+
+                    } else if (data.status === 'complete') {
+                        if (data.final_text) {
+                            addAIMessage(data.final_text);
+                        }
+                        return; // Ngắt vòng lặp, xử lý thành công hoàn toàn
+
+                    } else if (data.status === 'error') {
+                        const key = data.step_name || 'Lỗi';
+                        if (stepMap[key]) {
+                            setStepIcon(stepMap[key].iconEl, 'error');
+                            stepMap[key].itemEl.querySelector('.step-msg').textContent = data.message;
+                        } else {
+                            addStepItem(block, 'error', key, data.message);
+                        }
+                        throw new Error(data.message);
+                    }
+                } catch (e) {
+                    console.error("Lỗi parse gói dữ liệu JSON stream:", e);
+                }
             }
-
-        } else if (data.status === 'step_complete') {
-            const key = data.step_name;
-            if (stepMap[key]) {
-                setStepIcon(stepMap[key].iconEl, 'done');
-                stepMap[key].itemEl.querySelector('.step-msg').textContent = data.message;
-            } else {
-                addStepItem(block, 'done', data.step_name, data.message);
-            }
-
-        } else if (data.status === 'complete') {
-            if (data.final_text) {
-                addAIMessage(data.final_text);
-            }
-            es.close();
-            resolve();
-
-        } else if (data.status === 'error') {
-            const key = data.step_name || 'Lỗi';
-            if (stepMap[key]) {
-                setStepIcon(stepMap[key].iconEl, 'error');
-                stepMap[key].itemEl.querySelector('.step-msg').textContent = data.message;
-            } else {
-                addStepItem(block, 'error', key, data.message);
-            }
-            es.close();
-            reject(new Error(data.message));
         }
     }
 });

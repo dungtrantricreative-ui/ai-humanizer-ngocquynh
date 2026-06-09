@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 humanization_pipeline = HumanizationPipeline()
 
+# Khai báo cấu trúc dữ liệu gửi lên qua phương thức POST
 class HumanizeRequest(BaseModel):
     text: str
     language: Literal["vi", "en", "zh", "ja"]
@@ -29,10 +30,23 @@ async def event_generator(text: str, language: str) -> AsyncGenerator[str, None]
         logger.error(f"Error in event stream: {e}")
         yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
 
-@router.get("/humanize", response_class=StreamingResponse)
-async def humanize_text_stream_endpoint(text: str = Query(...), language: str = Query(...)):
-    logger.info(f"Received streaming humanize request for language: {language}")
-    return StreamingResponse(event_generator(text, language), media_type="text/event-stream")
+# ĐỔI THÀNH POST để hỗ trợ văn bản dài vô hạn
+@router.post("/humanize", response_class=StreamingResponse)
+async def humanize_text_stream_endpoint(request: HumanizeRequest):
+    logger.info(f"Received streaming humanize request for language: {request.language}")
+    
+    # CẤU HÌNH QUAN TRỌNG CHO RENDER.COM:
+    # 'X-Accel-Buffering': 'no' ngăn chặn proxy giữ lại dữ liệu stream (buffering)
+    headers = {
+        "X-Accel-Buffering": "no",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive"
+    }
+    return StreamingResponse(
+        event_generator(request.text, request.language), 
+        media_type="text/event-stream",
+        headers=headers
+    )
 
 @router.post("/chat")
 async def chat_endpoint(messages: list[ChatMessage]):

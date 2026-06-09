@@ -5,7 +5,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatContainer    = document.getElementById('chat-container');
     const chatScroll       = document.getElementById('chat-scroll');
     const charCount        = document.getElementById('char-count');
-    const newChatBtn       = document.getElementById('new-chat-btn');
     const processingBadge  = document.getElementById('processing-badge');
     const welcomeScreen    = document.getElementById('welcome-screen');
     const userTpl          = document.getElementById('user-message-template');
@@ -14,8 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const aiTpl            = document.getElementById('ai-message-template');
 
     let isProcessing = false;
-    let chatSessions = [];          // [{id, title, messages:[]}]
-    let activeSession = null;
     let currentStepsBlock = null;   // {el, list, countEl, count, doneEl}
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -36,34 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
         charCount.textContent = inputText.value.length;
     });
 
-    // ─── Session / history ──────────────────────────────────────────────────
 
-    function createSession(title) {
-        const id = Date.now().toString();
-        const session = { id, title: title || 'Cuộc trò chuyện', messages: [] };
-        chatSessions.unshift(session);
-        activeSession = session;
-        renderHistory();
-        return session;
-    }
-
-    // ─── New Chat ────────────────────────────────────────────────────────────
-
-    newChatBtn.addEventListener('click', () => {
-        chatContainer.innerHTML = `
-            <div id="welcome-screen" class="flex flex-col items-center justify-center pt-16 pb-8 text-center">
-                <div class="w-10 h-10 rounded-xl bg-black flex items-center justify-center mb-5">
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2L18 10L10 18M2 10H18" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </div>
-                <h3 class="text-xl font-semibold text-gray-900 mb-2">Chào mừng bạn</h3>
-                <p class="text-sm text-gray-500 max-w-sm leading-relaxed">Paste văn bản AI vào đây. Tôi sẽ biến nó thành văn bản tự nhiên như người viết, vượt qua mọi AI detector.</p>
-            </div>
-        `;
-        inputText.value = '';
-        charCount.textContent = '0';
-        currentStepsBlock = null;
-        processingBadge.classList.remove('active');
-    });
 
     // ─── User message ────────────────────────────────────────────────────────
 
@@ -166,7 +136,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function addAIMessage(text) {
         const clone = aiTpl.content.cloneNode(true);
-        clone.querySelector('p').textContent = text;
+        const mdDiv = clone.querySelector('.markdown-body');
+        if (typeof marked !== 'undefined') {
+            mdDiv.innerHTML = marked.parse(text);
+        } else {
+            mdDiv.textContent = text;
+        }
+        if (typeof renderMathInElement !== 'undefined') {
+            setTimeout(() => {
+                renderMathInElement(mdDiv, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    throwOnError: false
+                });
+            }, 0);
+        }
 
         const wrapper  = clone.querySelector('.ai-message-wrapper');
         const copyBtn  = clone.querySelector('.copy-btn');

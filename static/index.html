@@ -8,29 +8,18 @@
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&display=swap" rel="stylesheet">
+
+    <!-- Markdown + LaTeX support -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
 </head>
-<body class="bg-white h-screen flex overflow-hidden">
-
-    <!-- Sidebar -->
-    <aside class="w-52 border-r border-gray-100 flex flex-col bg-[#f9f9f9] shrink-0">
-        <!-- Logo + New Chat -->
-        <div class="px-4 pt-5 pb-4">
-            <div class="flex items-center gap-2 mb-5">
-                <div class="w-6 h-6 rounded bg-black flex items-center justify-center">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 7L7 13M1 7H13" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </div>
-                <span class="text-sm font-semibold text-gray-900 tracking-tight">Humanizer</span>
-            </div>
-
-            <button id="new-chat-btn" class="w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition-colors">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1V13M1 7H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                Cuộc trò chuyện mới
-            </button>
-        </div>
-    </aside>
+<body class="bg-white h-screen overflow-hidden">
 
     <!-- Main Content -->
-    <div class="flex-1 flex flex-col min-w-0">
+    <div class="flex flex-col min-w-0 h-full">
         <!-- Header -->
         <header class="border-b border-gray-100 px-6 py-3 flex justify-between items-center shrink-0 bg-white">
             <div class="flex items-center gap-3">
@@ -133,7 +122,7 @@
     <template id="ai-message-template">
         <div class="ai-message-wrapper">
             <div class="ai-bubble text-gray-900 text-sm leading-relaxed">
-                <p class="whitespace-pre-wrap mb-3"></p>
+                <div class="markdown-body"></div>
                 <div class="flex items-center gap-1 pt-2 border-t border-gray-100">
                     <button class="like-btn flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors">
                         <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M4 12V6L7 1L7.5 1.5C8 2.5 7.5 4 7.5 4H11C11.6 4 12 4.5 12 5L11 9C10.8 9.6 10.3 10 9.7 10H4M2 10V6H4V10H2" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>

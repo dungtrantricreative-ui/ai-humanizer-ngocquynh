@@ -1,211 +1,311 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const inputText = document.getElementById('input-text');
-    const languageSelect = document.getElementById('language-select');
-    const humanizeBtn = document.getElementById('humanize-btn');
-    const chatContainer = document.getElementById('chat-container');
-    const charCount = document.getElementById('char-count');
-    const statusModal = document.getElementById('status-modal');
-    const statusContent = document.getElementById('status-content');
-    const closeStatusModalBtn = document.getElementById('close-status-modal');
-    const newChatBtn = document.getElementById('new-chat-btn');
-
-    const userTemplate = document.getElementById('user-message-template');
-    const aiTemplate = document.getElementById('ai-message-template');
-    const statusItemTemplate = document.getElementById('status-item-template');
+    const inputText        = document.getElementById('input-text');
+    const languageSelect   = document.getElementById('language-select');
+    const humanizeBtn      = document.getElementById('humanize-btn');
+    const chatContainer    = document.getElementById('chat-container');
+    const chatScroll       = document.getElementById('chat-scroll');
+    const charCount        = document.getElementById('char-count');
+    const newChatBtn       = document.getElementById('new-chat-btn');
+    const processingBadge  = document.getElementById('processing-badge');
+    const welcomeScreen    = document.getElementById('welcome-screen');
+    const userTpl          = document.getElementById('user-message-template');
+    const stepsTpl         = document.getElementById('steps-block-template');
+    const stepItemTpl      = document.getElementById('step-item-template');
+    const aiTpl            = document.getElementById('ai-message-template');
 
     let isProcessing = false;
-    let currentEventSource = null;
+    let chatSessions = [];          // [{id, title, messages:[]}]
+    let activeSession = null;
+    let currentStepsBlock = null;   // {el, list, countEl, count, doneEl}
 
-    // Update character count
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    function scrollBottom() {
+        chatScroll.scrollTo({ top: chatScroll.scrollHeight, behavior: 'smooth' });
+    }
+
+    function hideWelcome() {
+        if (welcomeScreen && welcomeScreen.parentNode) {
+            welcomeScreen.remove();
+        }
+    }
+
+    // ─── Character count ────────────────────────────────────────────────────
+
     inputText.addEventListener('input', () => {
         charCount.textContent = inputText.value.length;
     });
 
-    // New Chat Button
+    // ─── Session / history ──────────────────────────────────────────────────
+
+    function createSession(title) {
+        const id = Date.now().toString();
+        const session = { id, title: title || 'Cuộc trò chuyện', messages: [] };
+        chatSessions.unshift(session);
+        activeSession = session;
+        renderHistory();
+        return session;
+    }
+
+    // ─── New Chat ────────────────────────────────────────────────────────────
+
     newChatBtn.addEventListener('click', () => {
         chatContainer.innerHTML = `
-            <div class="flex justify-center">
-                <div class="text-center max-w-2xl">
-                    <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <i class="fas fa-wand-magic-sparkles text-white text-lg"></i>
-                    </div>
-                    <h3 class="text-2xl font-bold text-gray-900 mb-2">Chào mừng bạn!</h3>
-                    <p class="text-gray-600">Hãy paste văn bản AI của bạn vào đây. Tôi sẽ biến nó thành văn bản tự nhiên như người viết, vượt qua mọi AI detector.</p>
+            <div id="welcome-screen" class="flex flex-col items-center justify-center pt-16 pb-8 text-center">
+                <div class="w-10 h-10 rounded-xl bg-black flex items-center justify-center mb-5">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2L18 10L10 18M2 10H18" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </div>
+                <h3 class="text-xl font-semibold text-gray-900 mb-2">Chào mừng bạn</h3>
+                <p class="text-sm text-gray-500 max-w-sm leading-relaxed">Paste văn bản AI vào đây. Tôi sẽ biến nó thành văn bản tự nhiên như người viết, vượt qua mọi AI detector.</p>
             </div>
         `;
         inputText.value = '';
         charCount.textContent = '0';
-        statusContent.innerHTML = '';
-        statusModal.classList.add('hidden');
+        currentStepsBlock = null;
+        processingBadge.classList.remove('active');
     });
 
-    // Close Status Modal
-    closeStatusModalBtn.addEventListener('click', () => {
-        statusModal.classList.add('hidden');
+    // ─── User message ────────────────────────────────────────────────────────
+
+    function addUserMessage(text) {
+        hideWelcome();
+        const clone = userTpl.content.cloneNode(true);
+        clone.querySelector('p').textContent = text;
+        chatContainer.appendChild(clone);
+        scrollBottom();
+    }
+
+    // ─── Steps block ─────────────────────────────────────────────────────────
+
+    function createStepsBlock() {
+        const clone = stepsTpl.content.cloneNode(true);
+        const el       = clone.querySelector('.steps-block');
+        const toggle   = clone.querySelector('.steps-toggle');
+        const chevron  = clone.querySelector('.steps-chevron');
+        const list     = clone.querySelector('.steps-list');
+        const countEl  = clone.querySelector('.steps-count');
+        const doneEl   = clone.querySelector('.steps-done-badge');
+
+        toggle.addEventListener('click', () => {
+            const open = !list.classList.contains('hidden');
+            if (open) {
+                list.classList.add('hidden');
+                chevron.classList.remove('open');
+            } else {
+                list.classList.remove('hidden');
+                chevron.classList.add('open');
+            }
+        });
+
+        chatContainer.appendChild(el);
+        scrollBottom();
+
+        // Return reference to the actual DOM node (not the clone's detached el)
+        const domEl = chatContainer.lastElementChild;
+        const domList    = domEl.querySelector('.steps-list');
+        const domCountEl = domEl.querySelector('.steps-count');
+        const domDoneEl  = domEl.querySelector('.steps-done-badge');
+        const domChevron = domEl.querySelector('.steps-chevron');
+        const domToggle  = domEl.querySelector('.steps-toggle');
+
+        // Expand by default while processing
+        domList.classList.remove('hidden');
+        domChevron.classList.add('open');
+
+        return {
+            el: domEl,
+            list: domList,
+            countEl: domCountEl,
+            doneEl: domDoneEl,
+            chevron: domChevron,
+            count: 0
+        };
+    }
+
+    function addStepItem(block, status, name, msg) {
+        const clone = stepItemTpl.content.cloneNode(true);
+        const item    = clone.querySelector('.step-item');
+        const iconEl  = clone.querySelector('.step-icon');
+        const nameEl  = clone.querySelector('.step-name');
+        const msgEl   = clone.querySelector('.step-msg');
+
+        nameEl.textContent = name;
+        msgEl.textContent  = msg || '';
+        setStepIcon(iconEl, status);
+
+        block.list.appendChild(item);
+        block.count++;
+        block.countEl.textContent = block.count;
+        scrollBottom();
+
+        // return reference to the actual last step item
+        return block.list.lastElementChild;
+    }
+
+    function setStepIcon(iconEl, status) {
+        if (status === 'running') {
+            iconEl.innerHTML = '<div class="step-icon-spin"></div>';
+        } else if (status === 'done') {
+            iconEl.innerHTML = `<svg class="step-icon-done" width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 6.5L5 9L10.5 4" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        } else if (status === 'error') {
+            iconEl.innerHTML = `<svg class="step-icon-error" width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="#ef4444" stroke-width="1.3"/><path d="M4.5 4.5L8.5 8.5M8.5 4.5L4.5 8.5" stroke="#ef4444" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+        }
+    }
+
+    function markStepsBlockDone(block) {
+        block.doneEl.classList.remove('hidden');
+        block.doneEl.classList.add('inline-flex');
+        // Collapse after done
+        setTimeout(() => {
+            block.list.classList.add('hidden');
+            block.chevron.classList.remove('open');
+        }, 800);
+    }
+
+    // ─── AI message ──────────────────────────────────────────────────────────
+
+    function addAIMessage(text) {
+        const clone = aiTpl.content.cloneNode(true);
+        clone.querySelector('p').textContent = text;
+
+        const wrapper  = clone.querySelector('.ai-message-wrapper');
+        const copyBtn  = clone.querySelector('.copy-btn');
+        const likeBtn  = clone.querySelector('.like-btn');
+        const dislikeBtn = clone.querySelector('.dislike-btn');
+
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = copyBtn.innerHTML;
+                copyBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 6.5L5 9L10.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Đã copy`;
+                setTimeout(() => { copyBtn.innerHTML = orig; }, 2000);
+            });
+        });
+        likeBtn.addEventListener('click', () => {
+            likeBtn.classList.toggle('text-green-600');
+            dislikeBtn.classList.remove('text-red-500');
+        });
+        dislikeBtn.addEventListener('click', () => {
+            dislikeBtn.classList.toggle('text-red-500');
+            likeBtn.classList.remove('text-green-600');
+        });
+
+        chatContainer.appendChild(wrapper);
+        scrollBottom();
+    }
+
+    // ─── Step tracking map ───────────────────────────────────────────────────
+    // Map step_name -> { itemEl, iconEl } so we can update in-place
+
+    let stepMap = {};
+
+    // ─── Main humanize ────────────────────────────────────────────────────────
+
+    humanizeBtn.addEventListener('click', startHumanize);
+    inputText.addEventListener('keydown', e => {
+        if (e.ctrlKey && e.key === 'Enter') startHumanize();
     });
 
-    // Handle Humanize button click
-    humanizeBtn.addEventListener('click', async () => {
-        const text = inputText.value.trim();
+    async function startHumanize() {
+        const text     = inputText.value.trim();
         const language = languageSelect.value;
 
-        if (!text) {
-            alert('Vui lòng nhập văn bản cần humanize!');
-            return;
-        }
+        if (!text) return;
+        if (isProcessing) return;
 
-        if (isProcessing) {
-            alert('Đang xử lý, vui lòng chờ...');
-            return;
-        }
-
-        // Add user message to chat
-        addMessage(text, 'user');
-        
-        // Clear input
+        addUserMessage(text);
         inputText.value = '';
         charCount.textContent = '0';
 
-        // Show status modal and clear previous status
-        statusContent.innerHTML = '';
-        statusModal.classList.remove('hidden');
-
         isProcessing = true;
         humanizeBtn.disabled = true;
+        processingBadge.classList.add('active');
+
+        // Create steps block
+        currentStepsBlock = createStepsBlock();
+        stepMap = {};
 
         try {
             await streamHumanization(text, language);
-        } catch (error) {
-            console.error('Error:', error);
-            addMessage(`Lỗi: ${error.message}`, 'ai');
-            addStatusItem('error', 'Lỗi xảy ra', error.message);
+        } catch (err) {
+            console.error(err);
+            addAIMessage('Lỗi: ' + err.message);
+            if (currentStepsBlock) {
+                addStepItem(currentStepsBlock, 'error', 'Lỗi', err.message);
+            }
         } finally {
             isProcessing = false;
             humanizeBtn.disabled = false;
-            // Scroll to bottom
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            processingBadge.classList.remove('active');
+            if (currentStepsBlock) markStepsBlockDone(currentStepsBlock);
         }
-    });
-
-    function addMessage(content, role) {
-        const template = role === 'user' ? userTemplate : aiTemplate;
-        const clone = template.content.cloneNode(true);
-        const messageDiv = clone.querySelector('div');
-        const textElement = clone.querySelector('p');
-        
-        textElement.textContent = content;
-        messageDiv.classList.add('animate-fade-in');
-
-        if (role === 'ai') {
-            const copyBtn = clone.querySelector('.copy-btn');
-            const likeBtn = clone.querySelector('.like-btn');
-            const dislikeBtn = clone.querySelector('.dislike-btn');
-
-            copyBtn.addEventListener('click', () => {
-                navigator.clipboard.writeText(content).then(() => {
-                    const originalHTML = copyBtn.innerHTML;
-                    copyBtn.innerHTML = '<i class="fas fa-check text-xs"></i><span class="text-xs">Đã copy!</span>';
-                    setTimeout(() => {
-                        copyBtn.innerHTML = originalHTML;
-                    }, 2000);
-                });
-            });
-
-            likeBtn.addEventListener('click', () => {
-                likeBtn.classList.add('text-green-600');
-                dislikeBtn.classList.remove('text-red-600');
-            });
-
-            dislikeBtn.addEventListener('click', () => {
-                dislikeBtn.classList.add('text-red-600');
-                likeBtn.classList.remove('text-green-600');
-            });
-        }
-
-        chatContainer.appendChild(clone);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    function addStatusItem(status, stepName, message) {
-        const clone = statusItemTemplate.content.cloneNode(true);
-        const statusItem = clone.querySelector('.status-item');
-        const statusIcon = clone.querySelector('.status-icon');
-        const statusNameEl = clone.querySelector('.status-name');
-        const statusMessageEl = clone.querySelector('.status-message');
-
-        statusNameEl.textContent = stepName;
-        statusMessageEl.textContent = message;
-
-        if (status === 'step') {
-            statusIcon.innerHTML = '<i class="fas fa-circle-notch text-blue-600 text-xs animate-spin"></i>';
-            statusItem.classList.remove('complete', 'error');
-        } else if (status === 'step_complete') {
-            statusIcon.innerHTML = '<i class="fas fa-check-circle text-green-600 text-xs"></i>';
-            statusItem.classList.add('complete');
-            statusItem.classList.remove('error');
-        } else if (status === 'error') {
-            statusIcon.innerHTML = '<i class="fas fa-exclamation-circle text-red-600 text-xs"></i>';
-            statusItem.classList.add('error');
-            statusItem.classList.remove('complete');
-        }
-
-        statusContent.appendChild(clone);
-        statusContent.scrollTop = statusContent.scrollHeight;
     }
 
     async function streamHumanization(text, language) {
         return new Promise((resolve, reject) => {
-            const eventSource = new EventSource(`/humanize?text=${encodeURIComponent(text)}&language=${language}`);
-            currentEventSource = eventSource;
+            const url = `/humanize?text=${encodeURIComponent(text)}&language=${language}`;
+            const es  = new EventSource(url);
 
-            let finalText = '';
-
-            eventSource.addEventListener('message', (event) => {
+            es.addEventListener('message', event => {
                 try {
                     const data = JSON.parse(event.data);
-
-                    if (data.status === 'info') {
-                        addStatusItem('step', 'Khởi tạo', data.message);
-                    } else if (data.status === 'step') {
-                        addStatusItem('step', data.step_name, data.message);
-                    } else if (data.status === 'step_complete') {
-                        addStatusItem('step_complete', data.step_name, data.message);
-                        if (data.current_text) {
-                            finalText = data.current_text;
-                        }
-                    } else if (data.status === 'complete') {
-                        addStatusItem('step_complete', 'Hoàn tất', data.message);
-                        if (data.final_text) {
-                            finalText = data.final_text;
-                            addMessage(finalText, 'ai');
-                        }
-                        eventSource.close();
-                        resolve();
-                    } else if (data.status === 'error') {
-                        addStatusItem('error', 'Lỗi', data.message);
-                        eventSource.close();
-                        reject(new Error(data.message));
-                    }
+                    handleSSEEvent(data, es, resolve, reject);
                 } catch (e) {
-                    console.error('Error parsing event data:', e);
-                    eventSource.close();
+                    es.close();
                     reject(e);
                 }
             });
 
-            eventSource.addEventListener('error', (event) => {
-                console.error('EventSource error:', event);
-                eventSource.close();
+            es.addEventListener('error', () => {
+                es.close();
                 reject(new Error('Kết nối bị mất'));
             });
         });
     }
 
-    // Allow Ctrl+Enter to trigger humanize
-    inputText.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'Enter') {
-            humanizeBtn.click();
+    function handleSSEEvent(data, es, resolve, reject) {
+        const block = currentStepsBlock;
+
+        if (data.status === 'info') {
+            addStepItem(block, 'running', 'Khởi tạo', data.message);
+
+        } else if (data.status === 'step') {
+            // New step starts
+            const key = data.step_name;
+            if (!stepMap[key]) {
+                const itemEl  = addStepItem(block, 'running', data.step_name, data.message);
+                const iconEl  = itemEl.querySelector('.step-icon');
+                stepMap[key]  = { itemEl, iconEl };
+            } else {
+                // Update message
+                stepMap[key].itemEl.querySelector('.step-msg').textContent = data.message;
+            }
+
+        } else if (data.status === 'step_complete') {
+            const key = data.step_name;
+            if (stepMap[key]) {
+                setStepIcon(stepMap[key].iconEl, 'done');
+                stepMap[key].itemEl.querySelector('.step-msg').textContent = data.message;
+            } else {
+                addStepItem(block, 'done', data.step_name, data.message);
+            }
+
+        } else if (data.status === 'complete') {
+            if (data.final_text) {
+                addAIMessage(data.final_text);
+            }
+            es.close();
+            resolve();
+
+        } else if (data.status === 'error') {
+            const key = data.step_name || 'Lỗi';
+            if (stepMap[key]) {
+                setStepIcon(stepMap[key].iconEl, 'error');
+                stepMap[key].itemEl.querySelector('.step-msg').textContent = data.message;
+            } else {
+                addStepItem(block, 'error', key, data.message);
+            }
+            es.close();
+            reject(new Error(data.message));
         }
-    });
+    }
 });

@@ -1,33 +1,129 @@
-/* Custom styles for the chatbot UI */
-
-#chat-container::-webkit-scrollbar {
+/* Scrollbar Styling */
+#chat-container::-webkit-scrollbar,
+#status-content::-webkit-scrollbar {
     width: 6px;
 }
 
-#chat-container::-webkit-scrollbar-track {
-    background: #f1f1f1;
+#chat-container::-webkit-scrollbar-track,
+#status-content::-webkit-scrollbar-track {
+    background: transparent;
 }
 
-#chat-container::-webkit-scrollbar-thumb {
-    background: #888;
+#chat-container::-webkit-scrollbar-thumb,
+#status-content::-webkit-scrollbar-thumb {
+    background: #d1d5db;
     border-radius: 3px;
 }
 
-#chat-container::-webkit-scrollbar-thumb:hover {
-    background: #555;
+#chat-container::-webkit-scrollbar-thumb:hover,
+#status-content::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 .animate-fade-in {
     animation: fadeIn 0.3s ease-in-out;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+.animate-slide-in-right {
+    animation: slideInRight 0.3s ease-in-out;
 }
 
-/* Ensure textarea doesn't resize weirdly */
+/* Textarea Styling */
 textarea {
-    resize: vertical;
-    min-height: 100px;
+    font-family: inherit;
+    line-height: 1.5;
+}
+
+textarea::placeholder {
+    color: #9ca3af;
+}
+
+/* Status Item Styling */
+.status-item {
+    padding: 0.5rem 0;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.status-item.complete .status-icon {
+    color: #10b981;
+}
+
+.status-item.complete .status-icon i {
+    animation: none;
+}
+
+.status-item.error .status-icon {
+    color: #ef4444;
+}
+
+.status-item.error .status-icon i {
+    animation: none;
+}
+
+/* Smooth transitions */
+* {
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+button {
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+/* Chat bubble styling */
+.message-bubble {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Hover effects for interactive elements */
+.chat-history-item {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.chat-history-item:hover {
+    background-color: #f3f4f6;
+}
+
+/* Modal styling */
+#status-modal {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Loading spinner */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.animate-spin {
+    animation: spin 1s linear infinite;
 }

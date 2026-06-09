@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from typing import Dict
+from typing import Dict, AsyncGenerator
 
 from src.nemotron_client import NemotronClient
 
@@ -62,59 +62,61 @@ class HumanizationPipeline:
                 return await self._translate_hop(text, source_lang_code, target_lang_code, attempt + 1)
             raise
 
-    async def humanize_text(self, text: str, language: str) -> str:
+    async def humanize_text_stream(self, text: str, language: str) -> AsyncGenerator[Dict[str, str], None]:
         logger.info(f"Starting humanization pipeline for {language} text.")
         processed_text = text
 
+        yield {"status": "info", "message": "Bắt đầu quá trình Humanize..."}
+
         # Step 1: Nemotron rewrite #1
+        yield {"status": "step", "step_name": "Rewrite #1", "message": "Đang viết lại văn bản lần 1..."}
         processed_text = await self._rewrite_text(processed_text, language)
-        logger.info("Step 1 (Nemotron rewrite #1) completed.")
+        yield {"status": "step_complete", "step_name": "Rewrite #1", "message": "Viết lại lần 1 hoàn tất.", "current_text": processed_text}
 
         # Step 2: Nemotron rewrite #2
+        yield {"status": "step", "step_name": "Rewrite #2", "message": "Đang viết lại văn bản lần 2..."}
         processed_text = await self._rewrite_text(processed_text, language)
-        logger.info("Step 2 (Nemotron rewrite #2) completed.")
+        yield {"status": "step_complete", "step_name": "Rewrite #2", "message": "Viết lại lần 2 hoàn tất.", "current_text": processed_text}
 
         # Determine a different language for translation hops
-        # For simplicity, let's hardcode to English if input is Vietnamese, else Vietnamese
-        # In a real scenario, this could be more dynamic or user-selected
         hop_lang1 = "en" if language == "vi" else "vi"
-        hop_lang2 = "zh" if language != "zh" else "en" # Use Chinese for second hop if not already Chinese, else English
+        hop_lang2 = "zh" if language != "zh" else "en"
 
         # Step 3: Translation hop #1
+        yield {"status": "step", "step_name": "Translation Hop #1", "message": f"Đang dịch qua {self.translation_languages.get(hop_lang1)} và quay lại..."}
         processed_text = await self._translate_hop(processed_text, language, hop_lang1)
-        logger.info(f"Step 3 (Translation hop #1 via {hop_lang1}) completed.")
+        yield {"status": "step_complete", "step_name": "Translation Hop #1", "message": "Dịch hop lần 1 hoàn tất.", "current_text": processed_text}
 
         # Step 4: Translation hop #2
+        yield {"status": "step", "step_name": "Translation Hop #2", "message": f"Đang dịch qua {self.translation_languages.get(hop_lang2)} và quay lại..."}
         processed_text = await self._translate_hop(processed_text, language, hop_lang2)
-        logger.info(f"Step 4 (Translation hop #2 via {hop_lang2}) completed.")
+        yield {"status": "step_complete", "step_name": "Translation Hop #2", "message": "Dịch hop lần 2 hoàn tất.", "current_text": processed_text}
 
+        yield {"status": "complete", "message": "Quá trình Humanize hoàn tất!", "final_text": processed_text}
         logger.info("Humanization pipeline completed.")
-        return processed_text
 
 if __name__ == "__main__":
     # Example usage (for testing purposes)
     import os
     os.environ["OPENROUTER_API_KEY"] = "sk-YOUR_OPENROUTER_API_KEY" # Replace with your actual key for testing
 
-    async def test_pipeline():
+    async def test_pipeline_stream():
         pipeline = HumanizationPipeline()
         sample_text_en = "The rapid advancement of artificial intelligence has led to significant breakthroughs in various fields, including natural language processing and computer vision. These developments promise to revolutionize industries and improve daily life."
         sample_text_vi = "Sự phát triển nhanh chóng của trí tuệ nhân tạo đã dẫn đến những đột phá đáng kể trong nhiều lĩnh vực, bao gồm xử lý ngôn ngữ tự nhiên và thị giác máy tính. Những phát triển này hứa hẹn sẽ cách mạng hóa các ngành công nghiệp và cải thiện cuộc sống hàng ngày."
 
-        print("\n--- Testing English Text ---")
+        print("\n--- Testing English Text Stream ---")
         try:
-            humanized_en = await pipeline.humanize_text(sample_text_en, "en")
-            print("Original English:\n", sample_text_en)
-            print("Humanized English:\n", humanized_en)
+            async for event in pipeline.humanize_text_stream(sample_text_en, "en"):
+                print(event)
         except Exception as e:
             print(f"Error humanizing English text: {e}")
 
-        print("\n--- Testing Vietnamese Text ---")
+        print("\n--- Testing Vietnamese Text Stream ---")
         try:
-            humanized_vi = await pipeline.humanize_text(sample_text_vi, "vi")
-            print("Original Vietnamese:\n", sample_text_vi)
-            print("Humanized Vietnamese:\n", humanized_vi)
+            async for event in pipeline.humanize_text_stream(sample_text_vi, "vi"):
+                print(event)
         except Exception as e:
             print(f"Error humanizing Vietnamese text: {e}")
 
-    asyncio.run(test_pipeline())
+    asyncio.run(test_pipeline_stream())

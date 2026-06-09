@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, AsyncGenerator
 import logging
+import json
 
 from src.pipeline import HumanizationPipeline
 
@@ -19,28 +21,26 @@ class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
 
-@router.post("/humanize")
-async def humanize_text_endpoint(request: HumanizeRequest):
+async def event_generator(text: str, language: str) -> AsyncGenerator[str, None]:
     try:
-        logger.info(f"Received humanize request for language: {request.language}")
-        humanized_text = await humanization_pipeline.humanize_text(request.text, request.language)
-        return {"humanized_text": humanized_text}
+        async for event in humanization_pipeline.humanize_text_stream(text, language):
+            yield f"data: {json.dumps(event)}\n\n"
     except Exception as e:
-        logger.error(f"Error during humanization: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in event stream: {e}")
+        yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+
+@router.get("/humanize", response_class=StreamingResponse)
+async def humanize_text_stream_endpoint(text: str = Query(...), language: str = Query(...)):
+    logger.info(f"Received streaming humanize request for language: {language}")
+    return StreamingResponse(event_generator(text, language), media_type="text/event-stream")
 
 @router.post("/chat")
 async def chat_endpoint(messages: list[ChatMessage]):
-    # This is a placeholder for a more complex chat interface if needed.
-    # For now, it can just echo or use Nemotron for a simple response.
-    # The main focus is on the /humanize endpoint.
     try:
         last_message = messages[-1].content if messages else ""
         if not last_message:
             raise HTTPException(status_code=400, detail="No message content provided.")
         
-        # Example: Use Nemotron to respond to a chat message (simplified)
-        # In a real chat, you'd manage conversation history and more complex prompts.
         prompt = f"You are a helpful AI assistant. Respond to the following user message: {last_message}"
         chat_response = await humanization_pipeline.nemotron_client.generate_text(prompt)
         
